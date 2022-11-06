@@ -1,8 +1,10 @@
 //! this is a collection of many instances of crawl.
+//! use features to enable each of functions.
 mod error;
+#[cfg(feature = "chengyu")]
 pub mod handian;
 mod utils;
-pub use error::{CrawlInsError, Result};
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+#[cfg(feature = "vocabulary")]
+pub mod vocabulary;
+pub mod webster;
+pub use error::{Error, Result};

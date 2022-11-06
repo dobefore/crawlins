@@ -20,7 +20,7 @@
 //! </div>
 //! ```
 
-use std::{collections::HashMap, fs, io::Write, sync::Arc};
+use std::{fs, io::Write, sync::Arc};
 
 use crate::{
     error::Result,
@@ -33,26 +33,6 @@ static DEFINITIONS: &str = r#"div[class="content definitions cnr"]"#;
 static PREFIX_URL: &str = "https://www.zdic.net/hans/";
 use futures::future::join_all;
 use tokio::sync::Mutex;
-pub async fn handle() {
-    // read entries from file
-    let mut f = fs::read_to_string("entry.txt").unwrap();
-
-    let f = f.lines().collect::<Vec<_>>();
-    let mut entries = vec![];
-    for e in f {
-        entries.push(e.to_string());
-    }
-    let mut map = HashMap::new();
-
-    let cyc = query_batch(&entries).await.unwrap();
-    for i in cyc.chengyucol().as_ref() {
-        map.insert(i.entry().to_string(), i.to_owned());
-    }
-
-    // after crawl done,write to map
-    let s = serde_json::to_string(&map).unwrap();
-    fs::write("entries.txt", s).unwrap();
-}
 /// It means handian chengyu.
 ///
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
@@ -237,10 +217,7 @@ pub async fn query_batch(entries: &[String]) -> Result<HanDianCYCollection> {
             .open("error.txt")?,
     ));
     for u in urls {
-        match u {
-            Ok(url) => v.push(url),
-            Err(e) => return Err(crate::CrawlInsError::UrlTransform(e.to_string())),
-        }
+        v.push(u?);
     }
     let group = group_by_range(v, 15);
 
@@ -267,8 +244,11 @@ pub async fn query_batch(entries: &[String]) -> Result<HanDianCYCollection> {
                     if limit >= 3 {
                         break;
                     }
-                    if let Err(e) = run_task(cys.clone(), entry.clone(), url.clone()).await {
-                        file.lock().await.write(format!("{}\n",entry).as_bytes()).unwrap();
+                    if let Err(e) = run_task(cys.clone(), entry.clone()).await {
+                        file.lock()
+                            .await
+                            .write(format!("{}\n", entry).as_bytes())
+                            .unwrap();
                         println!("{}", e);
                         break;
                     } else {
@@ -289,9 +269,9 @@ pub async fn query_batch(entries: &[String]) -> Result<HanDianCYCollection> {
 
     Ok(cyc)
 }
-async fn run_task(cys: Arc<Mutex<Vec<HanDianCY>>>, entry: String, url: String) -> Result<()> {
+async fn run_task(cys: Arc<Mutex<Vec<HanDianCY>>>, entry: String) -> Result<()> {
     println!("{entry}");
-    let url=to_url_code(format!("{}{}",PREFIX_URL,entry.replace("，", "")))?;
+    let url = to_url_code(format!("{}{}", PREFIX_URL, entry.replace("，", "")))?;
     let mut cy = HanDianCY::new(entry);
     let html = request_text(&url).await?;
     let py = parse_pinyin(&html, PINYIN)?;
@@ -325,25 +305,13 @@ fn parse_pinyin(html: &str, selector: &str) -> Result<String> {
             .collect::<Vec<_>>();
         py.remove(0)
     } else {
-        return Err(crate::CrawlInsError::ParseHtmlSelector(
+        return Err(crate::Error::ParseHtmlSelector(
             "pinyin item not found".into(),
         ));
     };
     Ok(py)
 }
-/// convert raw string to url code
-///
-/// # example
-/// ```
-/// let raw="http://a.b.c/我们";
-/// to_url_code(raw);
-///
-/// output:
-/// http://a.b.c/%E6%88%91%E4%BB%AC
-/// ```
-fn to_url_code<U: reqwest::IntoUrl>(raw_str: U) -> Result<String> {
-    Ok(raw_str.into_url()?.to_string())
-}
+
 /// parse html to get a collections of p elements which contain all sorts of definitions.
 /// then get text from these p s.
 ///
@@ -378,40 +346,14 @@ fn parse_definttion_block(html: &str, selector: &str) -> Result<Vec<String>> {
             block.push(item);
         }
     } else {
-        return Err(crate::CrawlInsError::ParseHtmlSelector(
+        return Err(crate::Error::ParseHtmlSelector(
             "div element not found".into(),
         ));
     }
 
     Ok(block)
 }
-// use genanki_rs::{Field, Model, Template, Error,Deck,Note};
-// async fn make_deck() -> Result<()> {
-//     let my_model = Model::new(
-//         1607392319,
-//         "Simple Model",
-//         vec![Field::new("Question"), Field::new("Answer")],
-//         vec![Template::new("Card 1")
-//             .qfmt("{{Question}}")
-//             .afmt(r#"{{FrontSide}}<hr id="answer">{{Answer}}"#)],
-//     );
-//     let mut my_deck = Deck::new(
-//         2059400110,
-//         "Country Capitals",
-//         "Deck for studying country capitals",
-//     );
-//     let my_note = Note::new(my_model, vec!["Capital of Argentina", "Buenos Aires"]).unwrap();
-//     my_deck.add_note(my_note);
-//     my_deck.write_to_file("chengyu.apkg").unwrap();
-//     let entries=["无法无天".to_string(),"火中取栗".to_string()];
-//     let cyc=query_batch(&entries).await?;
-// let col=cyc.chengyucol();
 
-// for h in col {
-
-// }
-//     Ok(())
-// }
 /// test whether web page can be gotten successfully or not.
 #[test]
 fn test_get_page() {
@@ -441,11 +383,4 @@ fn test_query_one() {
     let rt = Runtime::new();
     let r = rt.unwrap().block_on(query_one("总而言之")).unwrap();
     println!("{}", r)
-}
-
-#[test]
-fn test_handle() {
-    use tokio::runtime::Runtime;
-    let rt = Runtime::new();
-    rt.unwrap().block_on(handle());
 }

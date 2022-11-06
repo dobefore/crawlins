@@ -1,8 +1,7 @@
 use std::{num, result};
-use thiserror::Error;
-pub type Result<T> = result::Result<T, CrawlInsError>;
-#[derive(Error, Debug)]
-pub enum CrawlInsError {
+pub type Result<T> = result::Result<T, Error>;
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
     #[error("IO error: {0}")]
     IO(#[from] std::io::Error),
     #[error("ParseInt error: {0}")]
